@@ -1,0 +1,153 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Matlab file to implement orthogonal score for CES Team Example
+%
+% Order of Neyman orthogonality: p = 3
+% Number of Teams (=number of outcomes 'y' and means 'mu'): n = 2
+% Number of Researchers (=number of fixed effects 'eta'):   m = 2
+% Team network structure: {{1}, {2}}
+%
+% Number of up to p'th order derivatives wrt to 'mu':  d1 = 9
+% Number of up to p'th order derivatives wrt to 'eta': d2 = 9
+%
+% Common model parameter: para1 = []
+%                         para2 = [var1]
+% (in gammaX, lambdaX, varX, the X refers to team size, e.g. var2 is the variance of the error terms for teams of size two)
+%
+% Fixed effect parameters:  eta = [eta(1), eta(2)]
+%
+% The CES team production model specifies the mean 'mu(para1,eta)' and variance 'sigma2=sigma2(para2)'.
+% => in this code, this model only affects the def. of 'para1', 'para2', and fcts 'meanCESandDerivatives' and 'VARandDerivatives'
+% => everything else here is actually for a general model with independent normally distributed outcomes:
+%    y(i) ~ N(mu(i),sigma2(i)), i=1...n
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% The following is the main function of this program, which calls other functions below as required.
+% Inputs:  y = 1 x n vector of (mean) observed outcomes
+%          nobs = 1 x n vector of number of observations used to calculate mean outcomes (=vector of ones if no aggregation used)
+%          para1 = 1 x dim(para1) vector of common mean parameters ('gamma' and 'lambda')
+%          para2 = 1 x dim(para2) vector of common variance parameters ('var')
+%          eta = 1 x m vector of FE parameters
+% Output: 1 x (dim(para1)+dim(para2)) vector of p'th order orthogonalized score for (para1,para2)
+
+function [w,SigmaWW,b1,uStar1]=team4b_CES_order3_Teams_1_2(y,nobs,para1,para2,eta,gamma)
+
+  n = 2;
+
+  %Get means and variances (and all their required derivatives) for all 'n' outcomes according to the CES team production model:
+  [mu,derivativeCommon,derivativeEta]=meanCESandDerivatives(para1,eta);
+  [sigma2,derivativeVar]=VARandDerivatives(para2,nobs);
+
+  %Calculate the (generalized) score of the normal likelihood with respect to 'mu' and 'sigma':
+  [ScoreSigma2,GenScoreMu]=DerivativesNormalLikelihood(y,mu,sigma2);
+
+  %Get the d2 x d1 Faa Di Bruno matrix, which allows us to map derivatives wrt 'mu' to derivatives wrt 'eta':
+  FdBmat=FaaDiBruno(derivativeEta);
+
+  %Get the 1 x d1 vector of the diagonal terms of the expected value of GenScoreMu*GenScoreMu':
+  varGenScoreMu=[sigma2(1).^(-1),sigma2(2).^(-1),2.*sigma2(1).^(-2),2.*sigma2(2) ...
+  .^(-2),sigma2(1).^(-1).*sigma2(2).^(-1),6.*sigma2(1).^(-3),6.* ...
+  sigma2(2).^(-3),2.*sigma2(1).^(-2).*sigma2(2).^(-1),2.*sigma2(1) ...
+  .^(-1).*sigma2(2).^(-2)];
+
+
+  %Get the n x d1 matrix which corresponds to the rho-term (i.e. sigma-derivatives) in Lemma 2 in the note:
+  RhoMat=[0,0,sigma2(1).^(-2),0,0,0,0,0,0;0,0,0,sigma2(2).^(-2),0,0,0,0,0]; ...
+  
+
+
+  w=FdBmat*GenScoreMu';   % d2 vector of 'Bhattacharyya basis' (=generalized score wrt 'eta')
+  SigmaWW=FdBmat*diag(varGenScoreMu)*FdBmat'; % d2 x d2 matrix of expected value of w*w'
+  b1=derivativeEta1(eta,gamma)'; % d2 vector of derivatives for function of interest
+  uStar1=(1/2*(eta(1)^(gamma)+eta(2)^(gamma)))^(1/gamma) + w'*(SigmaWW\b1); % projected score for function of interest
+end
+
+function b1 = derivativeEta1(eta,gamma2)
+  b1=[2.^((-1).*gamma2.^(-1)).*eta(1).^((-1)+gamma2).*(eta(1).^gamma2+ ...
+  eta(2).^gamma2).^((-1)+gamma2.^(-1)),2.^((-1).*gamma2.^(-1)).*eta( ...
+  2).^((-1)+gamma2).*(eta(1).^gamma2+eta(2).^gamma2).^((-1)+ ...
+  gamma2.^(-1)),2.^((-1).*gamma2.^(-1)).*((-1)+gamma2).*eta(1).^(( ...
+  -2)+gamma2).*eta(2).^gamma2.*(eta(1).^gamma2+eta(2).^gamma2).^(( ...
+  -2)+gamma2.^(-1)),2.^((-1).*gamma2.^(-1)).*((-1)+gamma2).*eta(1) ...
+  .^gamma2.*eta(2).^((-2)+gamma2).*(eta(1).^gamma2+eta(2).^gamma2) ...
+  .^((-2)+gamma2.^(-1)),(-1).*2.^((-1).*gamma2.^(-1)).*((-1)+gamma2) ...
+  .*eta(1).^((-1)+gamma2).*eta(2).^((-1)+gamma2).*(eta(1).^gamma2+ ...
+  eta(2).^gamma2).^((-2)+gamma2.^(-1)),(-1).*2.^((-1).*gamma2.^(-1)) ...
+  .*((-1)+gamma2).*eta(1).^((-3)+gamma2).*eta(2).^gamma2.*(eta(1) ...
+  .^gamma2+eta(2).^gamma2).^((-3)+gamma2.^(-1)).*((1+gamma2).*eta(1) ...
+  .^gamma2+(-1).*((-2)+gamma2).*eta(2).^gamma2),2.^((-1).*gamma2.^( ...
+  -1)).*((-1)+gamma2).*eta(1).^gamma2.*eta(2).^((-3)+gamma2).*(eta( ...
+  1).^gamma2+eta(2).^gamma2).^((-3)+gamma2.^(-1)).*(((-2)+gamma2).* ...
+  eta(1).^gamma2+(-1).*(1+gamma2).*eta(2).^gamma2),2.^((-1).* ...
+  gamma2.^(-1)).*((-1)+gamma2).*eta(1).^((-2)+gamma2).*eta(2).^((-1) ...
+  +gamma2).*(eta(1).^gamma2+eta(2).^gamma2).^((-3)+gamma2.^(-1)).*( ...
+  eta(2).^gamma2+gamma2.*(eta(1).^gamma2+(-1).*eta(2).^gamma2)),(-1) ...
+  .*2.^((-1).*gamma2.^(-1)).*((-1)+gamma2).*eta(1).^((-1)+gamma2).* ...
+  eta(2).^((-2)+gamma2).*(eta(1).^gamma2+eta(2).^gamma2).^((-3)+ ...
+  gamma2.^(-1)).*(((-1)+gamma2).*eta(1).^gamma2+(-1).*gamma2.*eta(2) ...
+  .^gamma2)];
+end
+
+% Calculate variance 'sigma2' of outcomes 'y' according to the team model, and its required derivatives:
+% Output: sigma2 = 1 x n vector of variances
+%         derivativeVar = dim(para2) x n matrix of 1'st derivatives of 'sigma2' wrt common parameters 'para2'
+
+function [sigma2,derivativeVar] = VARandDerivatives(para2,nobs)
+  para=num2cell(para2);
+  [var1] = deal(para{:});
+
+  sigma2 = [var1.*nobs(1).^(-1),var1.*nobs(2).^(-1)];
+
+  derivativeVar = [nobs(1).^(-1),nobs(2).^(-1)];
+
+end
+
+% Calculate mean 'mu' of outcomes 'y' according to CES team model, and all its required derivatives:
+% Output: mu = 1 x n vector of means
+%         derivativeCommon = dim(para1) x n matrix of 1'st derivatives of 'mu' wrt common parameters 'gamma' and 'lambda'
+%         derivativeEta    = d2 x n matrix of all required derivatives of 'mu' wrt common parameters 'eta'
+
+function [mu,derivativeCommon,derivativeEta] = meanCESandDerivatives(para1,eta)
+  para=num2cell(para1);
+  mu = [log(eta(1)),log(eta(2))];
+
+  derivativeCommon = [];
+  derivativeEta = [eta(1).^(-1),0;0,eta(2).^(-1);(-1).*eta(1).^(-2),0;0,(-1).*eta(2) ...
+  .^(-2);0,0;2.*eta(1).^(-3),0;0,2.*eta(2).^(-3);0,0;0,0];
+
+end
+
+% Calculate Faa di Bruno matrix:
+% Input = d2 x n matrix of derivatives of 'mu' wrt 'eta' from above.
+% Output = d2 x d1 matrix with elements according to Faa di Bruno theorem.
+
+function FdBmat = FaaDiBruno(derivativeEta)
+  d=derivativeEta'; %n x d2 matrix of derivatives of 'mu' wrt 'eta'
+
+FdBmat=[d(1,1),d(2,1),0,0,0,0,0,0,0;d(1,2),d(2,2),0,0,0,0,0,0,0;d(1,3),d(2,3),d(1,1).^2,d(2,1).^2,2.*d(1,1).*d(2,1),0,0,0,0;d(1,4),d(2,4),d(1,2).^2,d(2,2).^2,2.*d(1,2).*d(2,2),0,0,0,0;d(1,5),d(2,5),d(1,1).*d(1,2),d(2,1).*d(2,2),d(1,2).*d(2,1)+d(1,1).*d(2,2),0,0,0,0;d(1,6),d(2,6),3.*d(1,1).*d(1,3),3.*d(2,1).*d(2,3),3.*(d(1,3).*d(2,1)+d(1,1).*d(2,3)),d(1,1).^3,d(2,1).^3,3.*d(1,1).^2.*d(2,1),3.*d(1,1).*d(2,1).^2;d(1,7),d(2,7),3.*d(1,2).*d(1,4),3.*d(2,2).*d(2,4),3.*(d(1,4).*d(2,2)+d(1,2).*d(2,4)),d(1,2).^3,d(2,2).^3,3.*d(1,2).^2.*d(2,2),3.*d(1,2).*d(2,2).^2;d(1,8),d(2,8),d(1,2).*d(1,3)+2.*d(1,1).*d(1,5),d(2,2).*d(2,3)+2.*d(2,1).*d(2,5),2.*d(1,5).*d(2,1)+d(1,3).*d(2,2)+d(1,2).*d(2,3)+2.*d(1,1).*d(2,5),d(1,1).^2.*d(1,2),d(2,1).^2.*d(2,2),d(1,1).*(2.*d(1,2).*d(2,1)+d(1,1).*d(2,2)),d(2,1).*(d(1,2).*d(2,1)+2.*d(1,1).*d(2,2));d(1,9),d(2,9),d(1,1).*d(1,4)+2.*d(1,2).*d(1,5),d(2,1).*d(2,4)+2.*d(2,2).*d(2,5),d(1,4).*d(2,1)+2.*d(1,5).*d(2,2)+d(1,1).*d(2,4)+2.*d(1,2).*d(2,5),d(1,1).*d(1,2).^2,d(2,1).*d(2,2).^2,d(1,2).*(d(1,2).*d(2,1)+2.*d(1,1).*d(2,2)),d(2,2).*(2.*d(1,2).*d(2,1)+d(1,1).*d(2,2))];
+
+end
+
+% Calculate the (generalized) score wrt 'mu' and 'sigma2' for the normal likelihood:
+% Output: ScoreSigma2 = 1 x n vector of score wrt sigma2
+%         GenScoreMu = 1 x d1 vector of generalized score wrt 'mu'
+
+function [ScoreSigma2,GenScoreMu] = DerivativesNormalLikelihood(y,mu,sigma2)
+  ScoreSigma2 = [(1/2).*sigma2(1).^(-2).*((-1).*sigma2(1)+((-1).*mu(1)+y(1)).^2),( ...
+  1/2).*sigma2(2).^(-2).*((-1).*sigma2(2)+((-1).*mu(2)+y(2)).^2)];
+
+  GenScoreMu = [sigma2(1).^(-1).*((-1).*mu(1)+y(1)),sigma2(2).^(-1).*((-1).*mu(2) ...
+  +y(2)),sigma2(1).^(-2).*(mu(1).^2+(-1).*sigma2(1)+(-2).*mu(1).*y( ...
+  1)+y(1).^2),sigma2(2).^(-2).*(mu(2).^2+(-1).*sigma2(2)+(-2).*mu(2) ...
+  .*y(2)+y(2).^2),sigma2(1).^(-1).*sigma2(2).^(-1).*((-1).*mu(1)+y( ...
+  1)).*((-1).*mu(2)+y(2)),sigma2(1).^(-3).*((-1).*mu(1)+y(1)).*(mu( ...
+  1).^2+(-3).*sigma2(1)+(-2).*mu(1).*y(1)+y(1).^2),sigma2(2).^(-3).* ...
+  ((-1).*mu(2)+y(2)).*(mu(2).^2+(-3).*sigma2(2)+(-2).*mu(2).*y(2)+y( ...
+  2).^2),sigma2(1).^(-2).*sigma2(2).^(-1).*(mu(1).^2+(-1).*sigma2(1) ...
+  +(-2).*mu(1).*y(1)+y(1).^2).*((-1).*mu(2)+y(2)),sigma2(1).^(-1).* ...
+  sigma2(2).^(-2).*((-1).*mu(1)+y(1)).*(mu(2).^2+(-1).*sigma2(2)+( ...
+  -2).*mu(2).*y(2)+y(2).^2)];
+
+end
+
